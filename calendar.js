@@ -1,7 +1,10 @@
 const isWeb = typeof window != 'undefined';
 
 class CalendarEvent{
-    constructor(){}
+    title;
+    constructor(title, options){
+        this.title = title;
+    }
     render(){
         if(!isWeb) return;
     }
@@ -21,7 +24,7 @@ class CalendarDay extends Date{
      */
     addEvents(...events){
         for(let event of events){
-            this.events.push();
+            this.events.push(event);
         }
     }
     /**
@@ -64,37 +67,25 @@ class CalendarDay extends Date{
      * @returns {WeekCalendar}
      */
     getWeek(){
-        // Ignore if is sunday
-        if(this.getDay()==0) return this.getNext().getWeek();
+        if(this.getDay() == 0) return this.getNext().getWeek();
         let week = new CalendarWeek();
-        let day  = this.clone();
-        // Get previous days
-        while(day.getDay()<=0){
-            week.addDay(day);
+        let day = this.clone();
+        // Go to start
+        while(day.getDay()!=0){
+            week.push(day);
             day = day.getPrevious();
         }
-        week.addDay(day);
-        // Get rest of week
+        week.push(day)
+        // Get test of days
         while(day.getDay()!=6){
             day = day.getNext();
-            week.addDay(day);
+            week.push(day);
         }
         return week;
     }
 
-
-    getMonth(month, direction=1){
-        if(month<0 || month>11 || direction!=1 || direction!=-1) return;
-        let month = this.getWeek().getMonth();
-        if(month==undefined) return this.getWeek().getMonth();
-        if(direction = 1){
-            while(month.month != month) month = month.getNext();
-            return month;
-        }
-        if(direction = -1){
-            while(month.month != month) month = month.getPrevious();
-            return month;
-        }
+    is(day){
+        return this.toISOString() == new Date(day).toISOString();
     }
 
     /**
@@ -122,10 +113,12 @@ class CalendarDay extends Date{
 
     renderMonthViewCell(){
         if(!isWeb) return;
-        let dom = Object.assign(document.createElement('div'), {
+        let dom = Object.assign(document.createElement('td'), {
             className: 'calendar-monthview-cell',
             innerHTML: this.getDate()
         });
+        if(this.events.length!=0) dom.classList.add('event')
+
         if(new Date().toLocaleDateString() === this.toLocaleDateString()) dom.classList.add('today');
         return dom;
     }
@@ -136,19 +129,22 @@ class CalendarWeek extends Array{
     /**
      * @type {Set}
      */
-    months = new Set();
+    months;
+    years;
     constructor(){
         super(7);
         this.months = new Set();
+        this.years = new Set();
     }
     /**
      * Dass day to specified index
      * @param {Number} index Number of day of week (0 is Sunday)
      * @param {CalendarDay} day Day object
      */
-    addDay(day){
+    push(day){
         this[day.getDay()] = day;
-        this.months.add( day.getMonth() );
+        this.months.add(day.getMonth())
+        this.years.add(day.getFullYear())
     }
     /**
      * Clones this object
@@ -156,9 +152,7 @@ class CalendarWeek extends Array{
      */
     clone(){
         let week = new CalendarWeek();
-        this.forEach((day, index)=>{
-            week[index] = day.clone(); 
-        });
+        this.forEach(day=>{week.push(day)});
         return week;
     }
     /**
@@ -183,24 +177,25 @@ class CalendarWeek extends Array{
     isSameMonth(months){
         return [...months].some( month => this.months.has(month) );
     }
-    /**
-     * Return rest of weeks in this month
-     * @returns {CalendarMonth}
-     */
     getMonth(){
+        if([...this.months].length==2) return this.getNext().getMonth();
         let month = new CalendarMonth();
         let week = this.clone();
-        while( week.isSameMonth( this.months ) ){
+        while( week.isSameMonth(this.months) ){
             week = week.getPrevious();
         }
         week = week.getNext();
-        while( week.isSameMonth( this.months ) ){
+        while( week.isSameMonth(this.months) ){
             month.push(week);
             week = week.getNext();
         }
-        
-        month.month = [...week.getPrevious().months][0];
         return month;
+
+    }
+
+    findDay(day){
+        let res = this.find(d=>d.is(day))
+        return res
     }
 
     renderWeekView(){
@@ -212,38 +207,103 @@ class CalendarWeek extends Array{
 
     renderMonthViewRow(){
         if(!isWeb) return;
-        let dom = Object.assign(document.createElement('div'), {className: 'calendar-monthview-row'});
+        let dom = Object.assign(document.createElement('tr'), {className: 'calendar-monthview-row'});
         dom.append( ...this.map(day=>day.renderMonthViewCell()) );
+        return dom;
     }
 
 }
 
 class CalendarMonth extends Array{
     month;
-    constructor(month){
+    year;
+    constructor(){
         super();
-        this.month = month;
     }
     clone(){
         let month = new CalendarMonth();
         this.forEach(week=>{
             month.push(week.clone())
         })
+        month.month = this.month;
         return month;
     }
+
+
+    push(week){
+        super.push(week);
+        let weekMonths = [...week.months];
+        let weekYears = [...week.years];
+        if(weekMonths.length == 1){
+            this.month = weekMonths[0]
+            this.year = weekYears[0];
+        }
+    }
+
     getPrevious(){
-        return this[0][0].getPrevious().getWeek().getMonth();
+        return this[0].getPrevious().getMonth();
     }
     getNext(){
-        return this[this.length-1][6].getNext().getWeek().getMonth();
+        return this[this.length-1].getNext().getMonth();
+    }
+
+    getYear(){
+        let year = new CalendarYear();
+        let month = this.clone();
+        while(month.month>=1){
+            month = month.getPrevious();
+        }
+        while(month.month<11){
+            year.push(month);
+            month = month.getNext();
+        } 
+        year.push(month);
+        return year;
+    }
+
+    findDay(day){
+        let res = this.find(week=>week.findDay(day));
+        return res?.findDay(day)
     }
 
     renderMonthView(){
         if(!isWeb) return;
-        let dom = Object.assign(document.createElement('div'), {className: 'calendar-monthview'});
+        let dom = Object.assign(document.createElement('table'), {className: 'calendar-monthview'});
+        let th = Object.assign(document.createElement('th'), {
+            colSpan: 7,
+            innerHTML: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][this.month] + ' ' + this.year
+        })
+        dom.append(th)
         dom.append( ...this.map(week=>week.renderMonthViewRow()) )
+        return dom;
+    }
+}
+
+class CalendarYear extends Array {
+    constructor(){
+        super(12);
+    }
+    getPrevious(){
+        return this[0].getPrevious().getYear();
+    }
+    getNext(){
+        return this[this.length-1].getNext().getYear();
+    }
+    push(month){
+        this[ month.month ] = month;
+        this.year = month.year;
     }
 
+    findDay(day){
+        let res = this.find( month => month.findDay(day) )
+        return res?.findDay(day);
+    }
 
+    renderYearView(){
+        if(!isWeb) return;
+        let dom = Object.assign(document.createElement('table'), {className: 'calendar-yearview'});
+        dom.append( ...this.map(month=>month.renderMonthView()) );
+        return dom;
+    }
 
 }
